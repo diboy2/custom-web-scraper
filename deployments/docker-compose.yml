@@ -1,0 +1,36 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: custom-web-scraper-db
+    environment:
+      POSTGRES_USER: scraper
+      POSTGRES_PASSWORD: scraper
+      POSTGRES_DB: scraper
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../configs/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U scraper -d scraper"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  scraper:
+    build:
+      context: ..
+      dockerfile: build/package/Dockerfile
+    container_name: custom-web-scraper
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: scraper
+      DB_PASSWORD: scraper
+      DB_NAME: scraper
+
+volumes:
+  postgres_data:
