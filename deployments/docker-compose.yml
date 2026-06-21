@@ -1,4 +1,10 @@
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: custom-web-scraper-redis
+    ports:
+      - "6379:6379"
+
   postgres:
     image: postgres:17-alpine
     container_name: custom-web-scraper-db
@@ -31,6 +37,7 @@ services:
       DB_USER: scraper
       DB_PASSWORD: scraper
       DB_NAME: scraper
+      REDIS_ADDR: redis:6379
 
 volumes:
   postgres_data:

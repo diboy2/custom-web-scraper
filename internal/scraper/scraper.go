@@ -8,8 +8,11 @@ import (
 	"strings"
 	"time"
 
+	"net/http"
+
 	"github.com/gocolly/colly"
 
+	"custom-web-scraper/internal/cache"
 	"custom-web-scraper/internal/db"
 )
 
@@ -23,11 +26,12 @@ type extractedContent struct {
 }
 
 type Scraper struct {
-	db *db.DB
+	db    *db.DB
+	cache *cache.Cache
 }
 
-func New(database *db.DB) *Scraper {
-	return &Scraper{db: database}
+func New(database *db.DB, c *cache.Cache) *Scraper {
+	return &Scraper{db: database, cache: c}
 }
 
 func (s *Scraper) Run(ctx context.Context, startURL string) error {
@@ -40,6 +44,13 @@ func (s *Scraper) Run(ctx context.Context, startURL string) error {
 	c := colly.NewCollector(
 		colly.AllowedDomains("hellointerview.com", "www.hellointerview.com"),
 	)
+	if s.cache != nil {
+		c.WithTransport(&cachedTransport{
+			base:  http.DefaultTransport,
+			cache: s.cache,
+			ctx:   ctx,
+		})
+	}
 
 	extracted := make(map[string]*extractedContent)
 	statusCodes := make(map[string]int)

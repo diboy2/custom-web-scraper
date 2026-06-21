@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 
+	"custom-web-scraper/internal/cache"
 	"custom-web-scraper/internal/db"
 	"custom-web-scraper/internal/scraper"
 )
@@ -24,7 +25,14 @@ func main() {
 	}
 	defer database.Close(ctx)
 
-	s := scraper.New(database)
+	var c *cache.Cache
+	if addr := getEnv("REDIS_ADDR", ""); addr != "" {
+		c = cache.New(addr)
+		defer c.Close()
+		log.Printf("Redis cache enabled at %s", addr)
+	}
+
+	s := scraper.New(database, c)
 	if err := s.Run(ctx, "https://www.hellointerview.com"); err != nil {
 		log.Fatalf("Scraper failed: %v", err)
 	}
