@@ -1,8 +1,54 @@
 # custom-web-scraper
 
-Scrapes the [Hello Interview Dashboard](https://www.hellointerview.com/dashboard) using Go and stores results in PostgreSQL.
+Scrapes [hellointerview.com](https://www.hellointerview.com) using Go and stores results in PostgreSQL. Starts from the base domain, follows links, and skips pages already in the database.
 
-Because the site requires authentication and relies heavily on client-side rendering, a traditional HTML parser like `goquery` will not work — browser automation is required.
+## Running Locally
+
+### Prerequisites
+
+- Go 1.24+
+- PostgreSQL 18 (`brew install postgresql@18`)
+
+### 1. Start PostgreSQL
+
+```bash
+brew services start postgresql@18
+```
+
+### 2. Create the database
+
+```bash
+psql postgres -c "CREATE USER scraper WITH PASSWORD 'scraper';"
+psql postgres -c "CREATE DATABASE scraper OWNER scraper;"
+psql -U scraper -d scraper -f configs/init.sql
+```
+
+### 3. Run the scraper
+
+```bash
+DB_HOST=localhost DB_PORT=5432 DB_USER=scraper DB_PASSWORD=scraper DB_NAME=scraper \
+  go run ./cmd/scraper/
+```
+
+### 4. Inspect results
+
+```bash
+psql -U scraper -d scraper -c "SELECT id, status, started_at, finished_at FROM scrape_runs;"
+psql -U scraper -d scraper -c "SELECT id, url FROM pages;"
+psql -U scraper -d scraper -c "SELECT id, run_id, page_id, status_code FROM page_content;"
+```
+
+Each run scrapes up to 3 new pages (pages already in the database are skipped). Failed requests are retried up to 3 times with linear backoff before the error is recorded.
+
+### Using Docker instead
+
+```bash
+docker compose -f deployments/docker-compose.yml up
+```
+
+---
+
+Because the site relies heavily on client-side rendering, a traditional HTML parser like `goquery` will not work — browser automation is required.
 
 ## System Architecture
 
@@ -43,7 +89,40 @@ go get -u github.com/jackc/pgx/v5
 go get -u github.com/redis/go-redis/v9
 ```
 
-### 2. PostgreSQL Schema
+### 2. PostgreSQL Setup
+
+#### MCP Server (recommended for AI-assisted development)
+
+The [PostgreSQL MCP server](https://github.com/modelcontextprotocol/servers/tree/main/src/postgres) lets Claude (or any MCP-compatible agent) query and inspect your database directly — useful for exploring schema, debugging inserts, and validating scraped data without leaving your editor.
+
+Add it to your Claude Code config (`.mcp.json` in the project root or `~/.claude/mcp.json` globally):
+
+```json
+{
+  "mcpServers": {
+    "postgres": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-postgres",
+        "postgresql://username:password@localhost:5432/your_database"
+      ]
+    }
+  }
+}
+```
+
+Then restart Claude Code — you can now ask it things like "show me the last 10 rows in `dashboard_metrics`" and it will query your live database.
+
+> **Security**: use a read-only Postgres role for the MCP connection so the agent can inspect data but cannot modify it.
+> ```sql
+> CREATE ROLE mcp_readonly LOGIN PASSWORD 'your_password';
+> GRANT CONNECT ON DATABASE your_database TO mcp_readonly;
+> GRANT USAGE ON SCHEMA public TO mcp_readonly;
+> GRANT SELECT ON ALL TABLES IN SCHEMA public TO mcp_readonly;
+> ```
+
+#### Schema
 
 ```sql
 CREATE TABLE IF NOT EXISTS dashboard_metrics (

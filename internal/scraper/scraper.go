@@ -38,12 +38,13 @@ func (s *Scraper) Run(ctx context.Context, startURL string) error {
 	log.Printf("Started scrape run %d", runID)
 
 	c := colly.NewCollector(
-		colly.AllowedDomains("www.hellointerview.com"),
+		colly.AllowedDomains("hellointerview.com", "www.hellointerview.com"),
 	)
 
 	extracted := make(map[string]*extractedContent)
 	statusCodes := make(map[string]int)
 	rawHTMLs := make(map[string]string)
+	skipSave := make(map[string]bool)
 	pagesScraped := 0
 
 	c.OnRequest(func(r *colly.Request) {
@@ -55,11 +56,11 @@ func (s *Scraper) Run(ctx context.Context, startURL string) error {
 		if err != nil {
 			log.Printf("DB check failed for %s: %v", r.URL, err)
 		} else if exists {
-			log.Printf("Skipping already-scraped %s", r.URL)
-			r.Abort()
-			return
+			log.Printf("Already scraped %s — following links only", r.URL)
+			skipSave[r.URL.String()] = true
+		} else {
+			pagesScraped++
 		}
-		pagesScraped++
 		r.Headers.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36")
 		fmt.Println("Visiting", r.URL)
 		extracted[r.URL.String()] = &extractedContent{}
@@ -109,6 +110,10 @@ func (s *Scraper) Run(ctx context.Context, startURL string) error {
 
 	c.OnScraped(func(r *colly.Response) {
 		url := r.Request.URL.String()
+
+		if skipSave[url] {
+			return
+		}
 
 		pageID, err := s.db.UpsertPage(ctx, url)
 		if err != nil {
